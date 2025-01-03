@@ -82,64 +82,43 @@ export const sendNotification = async (
   additionalData = {}
 ) => {
   try {
-    const fcmToken = await requestPermissionAndToken();
-
-    if (!fcmToken) {
-      throw new Error("Failed to get FCM token");
-    }
-
-    console.log("FCM Token received:", fcmToken);
-
+    // First check if user already has a valid token
     const tokenRef = doc(db, "userTokens", userId);
     const docSnap = await getDoc(tokenRef);
 
-    if (docSnap.exists()) {
-      await setDoc(
-        tokenRef,
-        {
-          fcmToken: fcmToken,
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
+    let fcmToken;
+
+    if (docSnap.exists() && docSnap.data().fcmToken) {
+      fcmToken = docSnap.data().fcmToken;
+      console.log("Using existing FCM token:", fcmToken);
     } else {
+      // If no token exists, request a new one
+      fcmToken = await requestPermissionAndToken();
+
+      if (!fcmToken) {
+        throw new Error("Failed to get FCM token");
+      }
+
+      console.log("New FCM Token received:", fcmToken);
+
+      // Store the new token
       await setDoc(tokenRef, {
         fcmToken: fcmToken,
         updatedAt: new Date().toISOString(),
         userId: userId,
       });
+
+      console.log("New token stored in Firestore successfully");
     }
 
-    console.log("Token stored in Firestore successfully");
-
-    console.log(`Fetching FCM token for user: ${userId}`);
-
-    // Fetch user's FCM token from Firestore
-    const tokenDoc = await getDoc(doc(db, "userTokens", userId));
-
-    if (!tokenDoc.exists()) {
-      console.error("No token document found for user:", userId);
-      throw new Error("No FCM token found for user");
-    }
-
-    const tokenData = tokenDoc.data();
-    const userToken = tokenData.fcmToken;
-
-    if (!userToken) {
-      console.error("FCM token not found in Firestore for user:", userId);
-      throw new Error("Invalid FCM token");
-    }
-
-    console.log("FCM token retrieved:", userToken);
-
-    // Send notification through backend API
+    // Send notification using the token
     const response = await fetch(API_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        token: userToken,
+        token: fcmToken,
         notification: {
           title,
           body,
@@ -182,4 +161,5 @@ export default app;
 const API_URL =
   process.env.NODE_ENV === "production"
     ? "https://snackspot.onrender.com/sendNotification"
-    : "http://localhost:4000/sendNotification";
+    : "https://snackspot.onrender.com/sendNotification";
+// : "http://localhost:4000/sendNotification";
